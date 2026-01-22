@@ -3,17 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>平甩功修煉助手 - 專業背景版</title>
-    <!-- 使用 CDN 加載必要庫 -->
+    <title>平甩功修煉助手 - 穩定發佈版</title>
+    <!-- 使用 CDN 加載庫 -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&display=swap');
-        body { font-family: 'Noto Sans TC', sans-serif; -webkit-tap-highlight-color: transparent; }
+        body { 
+            font-family: 'Noto Sans TC', sans-serif; 
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
         .progress-wave { transition: height 1s linear; }
+        /* 避免長按出現選單 */
+        img, a, button { -webkit-touch-callout: none; }
     </style>
 </head>
 <body class="bg-gray-50 overflow-hidden">
@@ -22,37 +27,28 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // 圖標組件輔助
-        const LucideIcon = ({ name, size = 24, className = "", fill = "none" }) => {
-            const elRef = useRef(null);
-            useEffect(() => {
-                const icon = lucide.icons[name];
-                if (icon && elRef.current) {
-                    const svg = lucide.createIcons({
-                        icons: { [name]: icon },
-                        attrs: { width: size, height: size, class: className, fill: fill }
-                    });
-                    elRef.current.innerHTML = '';
-                    elRef.current.appendChild(lucide.createIcons.icons[name]); // 簡化實現
-                }
-                // 使用簡單方式渲染
-                if (lucide.icons[name]) {
-                    const [tag, attrs, children] = lucide.icons[name];
-                    const svgNode = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-                    Object.entries({...attrs, width: size, height: size, class: className, fill: fill, "stroke-width": 2, "stroke": "currentColor"}).forEach(([k,v]) => svgNode.setAttribute(k, v));
-                    children.forEach(child => {
-                        const childNode = document.createElementNS("http://www.w3.org/2000/svg", child[0]);
-                        Object.entries(child[1]).forEach(([k,v]) => childNode.setAttribute(k, v));
-                        svgNode.appendChild(childNode);
-                    });
-                    elRef.current.innerHTML = '';
-                    elRef.current.appendChild(svgNode);
-                }
-            }, [name, size, className, fill]);
-            return <span ref={elRef} className="inline-block" />;
+        // 直接定義 SVG 圖標，解決庫加載錯誤問題
+        const Icons = {
+            Timer: () => (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="10" x2="14" y1="2" y2="2"/><line x1="12" x2="12" y1="14" y2="11"/><circle cx="12" cy="14" r="8"/></svg>
+            ),
+            RotateCcw: () => (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            ),
+            Play: () => (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            ),
+            Pause: () => (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            ),
+            Volume2: () => (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+            ),
+            Check: () => (
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            )
         };
 
-        // Web Worker 代碼：確保背景執行
         const workerCode = `
             let timer = null;
             self.onmessage = function(e) {
@@ -81,7 +77,7 @@
                 workerRef.current = new Worker(URL.createObjectURL(blob));
                 workerRef.current.onmessage = () => {
                     setTimeLeft(prev => {
-                        if (prev <= 1) { handleStop(); return 0; }
+                        if (prev <= 1) { handleStop(true); return 0; }
                         return prev - 1;
                     });
                     setSwingCount(prev => {
@@ -95,15 +91,17 @@
             }, []);
 
             const playTone = (freq, dur, type, vol) => {
-                if (!audioCtx.current) return;
-                const osc = audioCtx.current.createOscillator();
-                const gain = audioCtx.current.createGain();
-                osc.type = type;
-                osc.frequency.setValueAtTime(freq, audioCtx.current.currentTime);
-                gain.gain.setValueAtTime(vol, audioCtx.current.currentTime);
-                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.current.currentTime + dur);
-                osc.connect(gain); gain.connect(audioCtx.current.destination);
-                osc.start(); osc.stop(audioCtx.current.currentTime + dur);
+                try {
+                    if (!audioCtx.current) return;
+                    const osc = audioCtx.current.createOscillator();
+                    const gain = audioCtx.current.createGain();
+                    osc.type = type;
+                    osc.frequency.setValueAtTime(freq, audioCtx.current.currentTime);
+                    gain.gain.setValueAtTime(vol, audioCtx.current.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.current.currentTime + dur);
+                    osc.connect(gain); gain.connect(audioCtx.current.destination);
+                    osc.start(); osc.stop(audioCtx.current.currentTime + dur);
+                } catch(e) {}
             };
 
             const handleStart = () => {
@@ -118,17 +116,17 @@
                 workerRef.current.postMessage({ action: 'start', interval: 1200 });
             };
 
-            const handleStop = () => {
+            const handleStop = (autoFinished = false) => {
                 workerRef.current?.postMessage({ action: 'stop' });
                 setIsActive(false);
-                if (timeLeft <= 1) {
+                if (autoFinished) {
                     setIsFinished(true);
                     [440, 554, 659].forEach((f, i) => setTimeout(() => playTone(f, 0.8, 'sine', 0.2), i * 300));
                 }
             };
 
             const handleReset = () => {
-                handleStop(); setTimeLeft(0); setSwingCount(0); setIsFinished(false);
+                handleStop(false); setTimeLeft(0); setSwingCount(0); setIsFinished(false);
             };
 
             const formatTime = (s) => {
@@ -146,16 +144,15 @@
                             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-black shadow-lg shadow-indigo-200">平</div>
                             <div>
                                 <h1 className="text-xl font-black text-gray-900 leading-tight">平甩助手</h1>
-                                <p className="text-[10px] font-bold text-indigo-500 tracking-widest uppercase">Background Pro</p>
+                                <p className="text-[10px] font-bold text-indigo-500 tracking-widest uppercase">Stable Edition</p>
                             </div>
                         </div>
                         <button onClick={() => setShowSettings(true)} className="p-3 bg-white rounded-2xl shadow-sm border border-gray-100 active:scale-95 transition-transform">
-                            <LucideIcon name="Timer" size={24} className="text-gray-600" />
+                            <Icons.Timer />
                         </button>
                     </header>
 
                     <main className="w-full max-w-md bg-white rounded-[3rem] shadow-2xl shadow-gray-200 p-8 flex flex-col items-center relative overflow-hidden border border-gray-50">
-                        {/* 這裡的進度背景改為柔和藍色 */}
                         <div className="absolute inset-x-0 bottom-0 bg-indigo-50/50 progress-wave" style={{ height: `${progress}%` }} />
                         
                         <div className="relative z-10 w-full flex flex-col items-center">
@@ -183,13 +180,13 @@
 
                             <div className="flex items-center gap-8">
                                 <button onClick={handleReset} className="p-5 bg-gray-50 text-gray-400 rounded-3xl active:scale-90 transition-transform">
-                                    <LucideIcon name="RotateCcw" />
+                                    <Icons.RotateCcw />
                                 </button>
-                                <button onClick={isActive ? handleStop : handleStart} className={`p-8 rounded-[2.5rem] shadow-2xl transition-all active:scale-90 ${isActive ? 'bg-rose-500 text-white shadow-rose-200' : 'bg-indigo-600 text-white shadow-indigo-200'}`}>
-                                    <LucideIcon name={isActive ? "Pause" : "Play"} size={48} fill="currentColor" />
+                                <button onClick={isActive ? () => handleStop(false) : handleStart} className={`p-8 rounded-[2.5rem] shadow-2xl transition-all active:scale-90 ${isActive ? 'bg-rose-500 text-white shadow-rose-200' : 'bg-indigo-600 text-white shadow-indigo-200'}`}>
+                                    {isActive ? <Icons.Pause /> : <Icons.Play />}
                                 </button>
                                 <button className="p-5 bg-gray-50 text-gray-300 rounded-3xl opacity-50 cursor-not-allowed">
-                                    <LucideIcon name="Volume2" />
+                                    <Icons.Volume2 />
                                 </button>
                             </div>
                         </div>
@@ -207,27 +204,25 @@
                         李鳳山師父 · 平甩功導引<br/>每五下蹲彈兩下 · 氣血循環
                     </p>
 
-                    {/* 設定彈窗 */}
                     {showSettings && (
                         <div className="fixed inset-0 bg-gray-900/80 backdrop-blur-md z-50 flex items-end sm:items-center justify-center">
-                            <div className="bg-white rounded-t-[3rem] sm:rounded-[3rem] p-10 w-full max-w-md shadow-2xl animate-in slide-in-from-bottom duration-300">
+                            <div className="bg-white rounded-t-[3rem] sm:rounded-[3rem] p-10 w-full max-w-md shadow-2xl">
                                 <h3 className="text-2xl font-black mb-8 text-gray-900">設定修煉分鐘</h3>
                                 <div className="flex items-center justify-center gap-4 mb-10">
                                     <input type="number" value={customMinutes} onChange={e => setCustomMinutes(Math.max(1, parseInt(e.target.value)||1))} className="w-32 text-6xl font-black text-center text-indigo-600 border-b-4 border-indigo-500 focus:outline-none bg-transparent" />
                                     <span className="text-xl font-black text-gray-400">MIN</span>
                                 </div>
-                                <button onClick={() => { setTimeLeft(customMinutes*60); setTotalSeconds(customMinutes*60); setShowSettings(false); }} className="w-full bg-indigo-600 text-white py-5 rounded-3xl font-black text-xl shadow-xl shadow-indigo-100">開始這段修煉</button>
+                                <button onClick={() => { setTimeLeft(customMinutes*60); setTotalSeconds(customMinutes*60); setShowSettings(false); }} className="w-full bg-indigo-600 text-white py-5 rounded-3xl font-black text-xl shadow-xl shadow-indigo-100">套用設定</button>
                                 <button onClick={() => setShowSettings(false)} className="w-full mt-4 text-gray-400 font-bold py-2">取消</button>
                             </div>
                         </div>
                     )}
 
-                    {/* 結束彈窗 */}
                     {isFinished && (
                         <div className="fixed inset-0 bg-indigo-900/95 z-[60] flex items-center justify-center p-8 text-center text-white backdrop-blur-lg">
                             <div className="animate-in zoom-in duration-500">
                                 <div className="w-24 h-24 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                                    <LucideIcon name="Check" size={48} className="text-white" />
+                                    <Icons.Check />
                                 </div>
                                 <h2 className="text-5xl font-black mb-4">功德圓滿</h2>
                                 <p className="text-lg opacity-80 mb-10 leading-relaxed">雙手緩緩停下，閉目靜站三分鐘。<br/>感受氣血回流，全身舒暢。</p>
