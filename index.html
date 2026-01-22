@@ -1,0 +1,338 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Play, Pause, RotateCcw, Timer, Settings, Volume2, Info, CheckCircle2, Music } from 'lucide-react';
+
+// Web Worker 程式碼字串：解決瀏覽器背景節電導致定時器失效的問題
+const workerCode = `
+  let timer = null;
+  self.onmessage = function(e) {
+    if (e.data.action === 'start') {
+      timer = setInterval(() => {
+        self.postMessage('tick');
+      }, e.data.interval);
+    } else if (e.data.action === 'stop') {
+      clearInterval(timer);
+    }
+  };
+`;
+
+const App = () => {
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [isActive, setIsActive] = useState(false);
+  const [totalSeconds, setTotalSeconds] = useState(0);
+  const [swingCount, setSwingCount] = useState(0);
+  const [customMinutes, setCustomMinutes] = useState(10);
+  const [showSettings, setShowSettings] = useState(false);
+  const [isFinished, setIsFinished] = useState(false);
+  
+  const workerRef = useRef(null);
+  const audioContextRef = useRef(null);
+
+  // 初始化 Web Worker
+  useEffect(() => {
+    const blob = new Blob([workerCode], { type: 'application/javascript' });
+    workerRef.current = new Worker(URL.createObjectURL(blob));
+    
+    workerRef.current.onmessage = () => {
+      handleTick();
+    };
+
+    return () => {
+      if (workerRef.current) workerRef.current.terminate();
+    };
+  }, []);
+
+  // 每一下的處理邏輯
+  const handleTick = () => {
+    setTimeLeft((prev) => {
+      if (prev <= 1) {
+        stopPractice();
+        return 0;
+      }
+      return prev - 1.2 / 1.2; // 這裡處理邏輯依據下方定時器的間隔
+    });
+
+    setSwingCount((prev) => {
+      const next = prev + 1;
+      if (next % 5 === 0) {
+        playDeepTick();
+      } else {
+        playTick();
+      }
+      return next;
+    });
+  };
+
+  // 更精準的時間扣除 (因為是用 1.2s 一跳)
+  useEffect(() => {
+    if (timeLeft <= 0 && isActive) {
+      stopPractice();
+    }
+  }, [timeLeft, isActive]);
+
+  const stopPractice = () => {
+    if (workerRef.current) workerRef.current.postMessage({ action: 'stop' });
+    setIsActive(false);
+    if (timeLeft <= 0) {
+      setIsFinished(true);
+      playFinish();
+    }
+  };
+
+  // 初始化 Audio Context (確保在用戶點擊後啟動)
+  const initAudio = () => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioContextRef.current.state === 'suspended') {
+      audioContextRef.current.resume();
+    }
+  };
+
+  const playTone = (frequency, duration, type = 'sine', volume = 0.15) => {
+    if (!audioContextRef.current) return;
+    const osc = audioContextRef.current.createOscillator();
+    const gain = audioContextRef.current.createGain();
+    
+    osc.type = type;
+    osc.frequency.setValueAtTime(frequency, audioContextRef.current.currentTime);
+    
+    gain.gain.setValueAtTime(volume, audioContextRef.current.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioContextRef.current.currentTime + duration);
+    
+    osc.connect(gain);
+    gain.connect(audioContextRef.current.destination);
+    
+    osc.start();
+    osc.stop(audioContextRef.current.currentTime + duration);
+  };
+
+  const playTick = () => playTone(880, 0.1, 'sine', 0.1);
+  const playDeepTick = () => playTone(440, 0.4, 'triangle', 0.2);
+  const playFinish = () => {
+    [440, 554, 659, 880].forEach((freq, i) => {
+      setTimeout(() => playTone(freq, 0.6, 'sine', 0.2), i * 200);
+    });
+  };
+
+  const handleStart = () => {
+    initAudio();
+    if (timeLeft <= 0) {
+      const seconds = customMinutes * 60;
+      setTimeLeft(seconds);
+      setTotalSeconds(seconds);
+    }
+    setIsActive(true);
+    setIsFinished(false);
+    // 平甩功節奏：大約 1.2 秒一個循環 (每分鐘 50 下)
+    workerRef.current.postMessage({ action: 'start', interval: 1200 });
+  };
+
+  const handlePause = () => {
+    if (workerRef.current) workerRef.current.postMessage({ action: 'stop' });
+    setIsActive(false);
+  };
+
+  const handleReset = () => {
+    handlePause();
+    setTimeLeft(0);
+    setSwingCount(0);
+    setIsFinished(false);
+  };
+
+  const setDuration = (mins) => {
+    handleReset();
+    setCustomMinutes(mins);
+    const secs = mins * 60;
+    setTimeLeft(secs);
+    setTotalSeconds(secs);
+  };
+
+  const formatTime = (seconds) => {
+    const s = Math.max(0, Math.ceil(seconds));
+    const mins = Math.floor(s / 60);
+    const secs = s % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const progress = totalSeconds > 0 ? ((totalSeconds - timeLeft) / totalSeconds) * 100 : 0;
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col items-center p-6 font-sans">
+      {/* Header */}
+      <header className="w-full max-w-md flex justify-between items-center mb-6">
+        <div>
+          <h1 className="text-2xl font-black text-indigo-900 tracking-tight">平甩助手 PRO</h1>
+          <p className="text-xs text-indigo-600 font-bold flex items-center gap-1">
+            <Music size={12} /> 支援背景執行與音樂混合
+          </p>
+        </div>
+        <button 
+          onClick={() => setShowSettings(!showSettings)}
+          className="p-3 bg-white shadow-sm border border-slate-200 rounded-2xl hover:bg-indigo-50 transition-colors"
+        >
+          <Settings size={20} className="text-indigo-600" />
+        </button>
+      </header>
+
+      {/* Main Card */}
+      <main className="w-full max-w-md bg-white rounded-[2.5rem] shadow-2xl shadow-indigo-200/50 p-8 flex flex-col items-center relative overflow-hidden border border-white">
+        {/* Progress Bar (Vertical) */}
+        <div 
+          className="absolute left-0 bottom-0 w-2 bg-indigo-500 transition-all duration-1000 ease-linear"
+          style={{ height: `${progress}%` }}
+        />
+
+        <div className="relative z-10 w-full flex flex-col items-center">
+          <div className={`px-4 py-1 rounded-full text-xs font-bold mb-4 uppercase tracking-tighter ${
+            isActive ? 'bg-indigo-100 text-indigo-600 animate-pulse' : 'bg-slate-100 text-slate-400'
+          }`}>
+            {isActive ? "氣行流轉中" : "準備修煉"}
+          </div>
+          
+          <div className="text-8xl font-black text-slate-800 mb-6 tracking-tighter">
+            {formatTime(timeLeft)}
+          </div>
+
+          {/* Swing Visualizer */}
+          <div className="flex gap-4 mb-10">
+            {[1, 2, 3, 4, 5].map((i) => {
+              const currentStep = (swingCount % 5 === 0 && swingCount > 0) ? 5 : (swingCount % 5);
+              const isHighlight = currentStep === i && isActive;
+              return (
+                <div 
+                  key={i}
+                  className={`w-5 h-5 rounded-full transition-all duration-200 ${
+                    isHighlight 
+                      ? (i === 5 ? 'bg-rose-500 scale-150 shadow-lg shadow-rose-200' : 'bg-indigo-500 scale-125') 
+                      : 'bg-slate-100'
+                  }`}
+                />
+              );
+            })}
+          </div>
+
+          {/* Action Message */}
+          <div className="h-12 flex items-center justify-center mb-8">
+            {isActive && swingCount % 5 === 0 && swingCount > 0 ? (
+              <span className="text-rose-600 font-black text-xl animate-bounce">
+                ↓ 蹲彈兩下 ↓
+              </span>
+            ) : isActive ? (
+              <span className="text-indigo-400 font-medium">輕鬆擺動：第 {swingCount % 5 || 5} 下</span>
+            ) : null}
+          </div>
+
+          {/* Controls */}
+          <div className="flex items-center gap-8">
+            <button 
+              onClick={handleReset}
+              className="p-5 bg-slate-50 text-slate-400 rounded-3xl hover:bg-slate-100 transition-colors border border-slate-100"
+            >
+              <RotateCcw size={24} />
+            </button>
+            
+            <button 
+              onClick={isActive ? handlePause : handleStart}
+              className={`p-8 rounded-[2rem] shadow-2xl transition-all active:scale-90 ${
+                isActive 
+                  ? 'bg-rose-500 text-white shadow-rose-200' 
+                  : 'bg-indigo-600 text-white shadow-indigo-300'
+              }`}
+            >
+              {isActive ? <Pause size={40} fill="currentColor" /> : <Play size={40} fill="currentColor" className="ml-2" />}
+            </button>
+
+            <button 
+              className="p-5 bg-slate-50 text-slate-400 rounded-3xl cursor-not-allowed opacity-50 border border-slate-100"
+            >
+              <Volume2 size={24} />
+            </button>
+          </div>
+        </div>
+      </main>
+
+      {/* Quick Select */}
+      <div className="w-full max-w-md grid grid-cols-3 gap-4 mt-8">
+        {[10, 20, 30].map(mins => (
+          <button
+            key={mins}
+            onClick={() => setDuration(mins)}
+            className={`py-4 rounded-2xl font-bold transition-all border-2 ${
+              customMinutes === mins && !isActive
+                ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg'
+                : 'bg-white text-indigo-900 border-indigo-50 hover:border-indigo-200'
+            }`}
+          >
+            {mins} min
+          </button>
+        ))}
+      </div>
+
+      {/* Background Mode Notice */}
+      <div className="w-full max-w-md mt-6 p-4 bg-amber-50 rounded-2xl border border-amber-100">
+        <p className="text-[11px] text-amber-700 leading-tight text-center">
+          <strong>背景執行提示：</strong> 啟動後可直接切換至其他 App 或鎖定螢幕。
+          <br />若音樂被中斷，請點擊播放音樂 App 的播放鍵，本助手節奏將會與其混合輸出。
+        </p>
+      </div>
+
+      {/* Modals */}
+      {showSettings && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-6">
+          <div className="bg-white rounded-[2rem] p-8 w-full max-w-xs shadow-2xl">
+            <h3 className="text-xl font-black mb-6 flex items-center gap-2 text-slate-800">
+              <Timer className="text-indigo-600" /> 自訂修煉時間
+            </h3>
+            <div className="mb-8">
+              <input 
+                type="number" 
+                value={customMinutes}
+                onChange={(e) => setCustomMinutes(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-full text-5xl font-black p-2 border-b-4 border-indigo-500 focus:outline-none text-center text-indigo-600"
+              />
+              <p className="text-center text-slate-400 mt-2 font-bold uppercase text-xs tracking-widest">Minutes</p>
+            </div>
+            <button 
+              onClick={() => {
+                setDuration(customMinutes);
+                setShowSettings(false);
+              }}
+              className="w-full bg-indigo-600 text-white py-5 rounded-2xl font-black text-lg hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100"
+            >
+              確認設定
+            </button>
+            <button 
+              onClick={() => setShowSettings(false)}
+              className="w-full mt-4 text-slate-400 font-bold py-2 text-sm"
+            >
+              返回
+            </button>
+          </div>
+        </div>
+      )}
+
+      {isFinished && (
+        <div className="fixed inset-0 bg-indigo-900/90 backdrop-blur-xl z-[60] flex items-center justify-center p-8">
+          <div className="text-center text-white max-w-sm">
+            <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-6">
+              <CheckCircle2 size={48} className="text-white" />
+            </div>
+            <h2 className="text-4xl font-black mb-4">功德圓滿</h2>
+            <p className="text-indigo-100 mb-8 leading-relaxed">
+              雙手緩緩停下，閉目靜站三分鐘。<br />
+              感受氣血回流，全身舒暢。
+            </p>
+            <button 
+              onClick={() => setIsFinished(false)}
+              className="bg-white text-indigo-900 px-10 py-4 rounded-2xl font-black text-xl"
+            >
+              我知道了
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default App;
