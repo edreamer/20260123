@@ -2,9 +2,8 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>平甩功修煉助手 - 穩定發佈版</title>
-    <!-- 使用 CDN 加載庫 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>平甩功修煉助手 - iOS 背景優化版</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -15,19 +14,18 @@
             font-family: 'Noto Sans TC', sans-serif; 
             -webkit-tap-highlight-color: transparent;
             user-select: none;
+            touch-action: manipulation;
         }
         .progress-wave { transition: height 1s linear; }
-        /* 避免長按出現選單 */
-        img, a, button { -webkit-touch-callout: none; }
+        .active-glow { filter: drop-shadow(0 0 15px rgba(79, 70, 229, 0.4)); }
     </style>
 </head>
-<body class="bg-gray-50 overflow-hidden">
+<body class="bg-slate-50 overflow-hidden">
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // 直接定義 SVG 圖標，解決庫加載錯誤問題
         const Icons = {
             Timer: () => (
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="10" x2="14" y1="2" y2="2"/><line x1="12" x2="12" y1="14" y2="11"/><circle cx="12" cy="14" r="8"/></svg>
@@ -36,16 +34,16 @@
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
             ),
             Play: () => (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             ),
             Pause: () => (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
             ),
             Volume2: () => (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
             ),
             Check: () => (
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>
             )
         };
 
@@ -53,9 +51,11 @@
             let timer = null;
             self.onmessage = function(e) {
                 if (e.data.action === 'start') {
+                    if (timer) clearInterval(timer);
                     timer = setInterval(() => { self.postMessage('tick'); }, e.data.interval);
                 } else if (e.data.action === 'stop') {
                     clearInterval(timer);
+                    timer = null;
                 }
             };
         `;
@@ -71,6 +71,7 @@
             
             const workerRef = useRef(null);
             const audioCtx = useRef(null);
+            const masterGain = useRef(null);
 
             useEffect(() => {
                 const blob = new Blob([workerCode], { type: 'application/javascript' });
@@ -82,51 +83,104 @@
                     });
                     setSwingCount(prev => {
                         const next = prev + 1;
-                        if (next % 5 === 0) playTone(400, 0.4, 'triangle', 0.3);
-                        else playTone(800, 0.1, 'sine', 0.15);
+                        // 每5下一個重音 (300Hz 較沉穩)
+                        if (next % 5 === 0) playTone(300, 0.4, 'triangle', 0.4);
+                        else playTone(800, 0.1, 'sine', 0.2);
                         return next;
                     });
                 };
+
+                // 設定 Media Session (iOS 鎖定畫面控制)
+                if ('mediaSession' in navigator) {
+                    navigator.mediaSession.metadata = new MediaMetadata({
+                        title: '平甩功修煉中',
+                        artist: '李鳳山師父 導引',
+                        album: '天天平甩，氣血流暢',
+                    });
+                }
+
                 return () => workerRef.current?.terminate();
             }, []);
 
+            const initAudio = () => {
+                if (!audioCtx.current) {
+                    audioCtx.current = new (window.AudioContext || window.webkitAudioContext)({
+                        latencyHint: 'interactive'
+                    });
+                    masterGain.current = audioCtx.current.createGain();
+                    masterGain.current.connect(audioCtx.current.destination);
+                    
+                    // iOS Hack: 播放一個極其微弱的聲音來「溫暖」聲卡，避免背景被暫停
+                    const silentOsc = audioCtx.current.createOscillator();
+                    const silentGain = audioCtx.current.createGain();
+                    silentGain.gain.value = 0.001; // 極微弱，人耳聽不見
+                    silentOsc.connect(silentGain);
+                    silentGain.connect(audioCtx.current.destination);
+                    silentOsc.start();
+                }
+                if (audioCtx.current.state === 'suspended') {
+                    audioCtx.current.resume();
+                }
+            };
+
             const playTone = (freq, dur, type, vol) => {
+                if (!audioCtx.current || !isActive) return;
                 try {
-                    if (!audioCtx.current) return;
+                    const now = audioCtx.current.currentTime;
                     const osc = audioCtx.current.createOscillator();
                     const gain = audioCtx.current.createGain();
+                    
                     osc.type = type;
-                    osc.frequency.setValueAtTime(freq, audioCtx.current.currentTime);
-                    gain.gain.setValueAtTime(vol, audioCtx.current.currentTime);
-                    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.current.currentTime + dur);
-                    osc.connect(gain); gain.connect(audioCtx.current.destination);
-                    osc.start(); osc.stop(audioCtx.current.currentTime + dur);
-                } catch(e) {}
+                    osc.frequency.setValueAtTime(freq, now);
+                    
+                    gain.gain.setValueAtTime(0, now);
+                    gain.gain.linearRampToValueAtTime(vol, now + 0.01);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+                    
+                    osc.connect(gain);
+                    gain.connect(masterGain.current);
+                    
+                    osc.start(now);
+                    osc.stop(now + dur);
+                } catch(e) { console.error("Audio Play Error", e); }
             };
 
             const handleStart = () => {
-                if (!audioCtx.current) audioCtx.current = new (window.AudioContext || window.webkitAudioContext)();
-                if (audioCtx.current.state === 'suspended') audioCtx.current.resume();
-                
+                initAudio(); // 必須在點擊瞬間執行
                 if (timeLeft <= 0) {
                     const s = customMinutes * 60;
-                    setTimeLeft(s); setTotalSeconds(s);
+                    setTimeLeft(s);
+                    setTotalSeconds(s);
                 }
-                setIsActive(true); setIsFinished(false);
-                workerRef.current.postMessage({ action: 'start', interval: 1200 });
+                setIsActive(true);
+                setIsFinished(false);
+                workerRef.current.postMessage({ action: 'start', interval: 1200 }); // 平甩節奏約 1.2s/下
+                
+                if ('mediaSession' in navigator) {
+                    navigator.mediaSession.playbackState = 'playing';
+                }
             };
 
             const handleStop = (autoFinished = false) => {
                 workerRef.current?.postMessage({ action: 'stop' });
                 setIsActive(false);
+                if ('mediaSession' in navigator) {
+                    navigator.mediaSession.playbackState = 'paused';
+                }
                 if (autoFinished) {
                     setIsFinished(true);
-                    [440, 554, 659].forEach((f, i) => setTimeout(() => playTone(f, 0.8, 'sine', 0.2), i * 300));
+                    // 結束音效
+                    setTimeout(() => playTone(523.25, 0.5, 'sine', 0.3), 0);
+                    setTimeout(() => playTone(659.25, 0.5, 'sine', 0.3), 200);
+                    setTimeout(() => playTone(783.99, 0.8, 'sine', 0.3), 400);
                 }
             };
 
             const handleReset = () => {
-                handleStop(false); setTimeLeft(0); setSwingCount(0); setIsFinished(false);
+                handleStop(false);
+                setTimeLeft(0);
+                setSwingCount(0);
+                setIsFinished(false);
             };
 
             const formatTime = (s) => {
@@ -138,95 +192,119 @@
             const progress = totalSeconds > 0 ? ((totalSeconds - timeLeft) / totalSeconds) * 100 : 0;
 
             return (
-                <div className="min-h-screen flex flex-col items-center p-4 sm:p-8">
-                    <header className="w-full max-w-md flex justify-between items-center mb-6">
+                <div className="min-h-screen flex flex-col items-center p-4 sm:p-8 bg-slate-50">
+                    <header className="w-full max-w-md flex justify-between items-center mb-6 pt-4">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-black shadow-lg shadow-indigo-200">平</div>
+                            <div className="w-12 h-12 bg-indigo-600 rounded-2xl flex items-center justify-center text-white font-black shadow-lg shadow-indigo-200 text-xl">平</div>
                             <div>
-                                <h1 className="text-xl font-black text-gray-900 leading-tight">平甩助手</h1>
-                                <p className="text-[10px] font-bold text-indigo-500 tracking-widest uppercase">Stable Edition</p>
+                                <h1 className="text-xl font-black text-slate-900 leading-tight">平甩助手</h1>
+                                <p className="text-[10px] font-bold text-indigo-500 tracking-widest uppercase">iOS Background PRO</p>
                             </div>
                         </div>
-                        <button onClick={() => setShowSettings(true)} className="p-3 bg-white rounded-2xl shadow-sm border border-gray-100 active:scale-95 transition-transform">
+                        <button onClick={() => setShowSettings(true)} className="p-3 bg-white rounded-2xl shadow-sm border border-slate-100 active:scale-95 transition-transform">
                             <Icons.Timer />
                         </button>
                     </header>
 
-                    <main className="w-full max-w-md bg-white rounded-[3rem] shadow-2xl shadow-gray-200 p-8 flex flex-col items-center relative overflow-hidden border border-gray-50">
-                        <div className="absolute inset-x-0 bottom-0 bg-indigo-50/50 progress-wave" style={{ height: `${progress}%` }} />
+                    <main className="w-full max-w-md bg-white rounded-[3.5rem] shadow-2xl shadow-indigo-100/50 p-10 flex flex-col items-center relative overflow-hidden border border-white">
+                        <div className="absolute inset-x-0 bottom-0 bg-indigo-50/60 progress-wave" style={{ height: `${progress}%` }} />
                         
                         <div className="relative z-10 w-full flex flex-col items-center">
-                            <div className={`px-4 py-1 rounded-full text-[10px] font-black mb-6 tracking-widest uppercase transition-colors ${isActive ? 'bg-indigo-600 text-white animate-pulse' : 'bg-gray-100 text-gray-400'}`}>
-                                {isActive ? "氣行全身中" : "準備開始"}
+                            <div className={`px-5 py-1.5 rounded-full text-[11px] font-black mb-8 tracking-widest uppercase transition-all ${isActive ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200' : 'bg-slate-100 text-slate-400'}`}>
+                                {isActive ? "氣血運行中" : "準備開始"}
                             </div>
                             
-                            <div className="text-8xl font-black text-gray-800 mb-8 tracking-tighter tabular-nums">
+                            <div className="text-[5.5rem] font-black text-slate-800 mb-8 tracking-tighter tabular-nums leading-none">
                                 {formatTime(timeLeft)}
                             </div>
 
-                            <div className="flex gap-4 mb-10">
+                            <div className="flex gap-5 mb-12">
                                 {[1, 2, 3, 4, 5].map(i => {
                                     const step = (swingCount % 5 === 0 && swingCount > 0) ? 5 : (swingCount % 5);
                                     const active = step === i && isActive;
                                     return (
-                                        <div key={i} className={`w-4 h-4 rounded-full transition-all duration-300 ${active ? (i === 5 ? 'bg-rose-500 scale-150 shadow-lg shadow-rose-200' : 'bg-indigo-500 scale-125') : 'bg-gray-100'}`} />
+                                        <div key={i} className={`w-5 h-5 rounded-full transition-all duration-300 ${active ? (i === 5 ? 'bg-rose-500 scale-150 shadow-lg shadow-rose-200 active-glow' : 'bg-indigo-500 scale-125 active-glow') : 'bg-slate-100'}`} />
                                     );
                                 })}
                             </div>
 
-                            <div className="h-8 mb-10 flex items-center">
-                                {isActive && swingCount % 5 === 0 && <span className="text-rose-600 font-black text-xl animate-bounce">↓ 下蹲彈兩下 ↓</span>}
+                            <div className="h-10 mb-10 flex items-center">
+                                {isActive && swingCount % 5 === 0 && (
+                                    <div className="flex flex-col items-center animate-bounce">
+                                        <span className="text-rose-600 font-black text-2xl tracking-tighter">↓ 下蹲彈兩下 ↓</span>
+                                    </div>
+                                )}
                             </div>
 
-                            <div className="flex items-center gap-8">
-                                <button onClick={handleReset} className="p-5 bg-gray-50 text-gray-400 rounded-3xl active:scale-90 transition-transform">
+                            <div className="flex items-center gap-10">
+                                <button onClick={handleReset} className="p-6 bg-slate-50 text-slate-400 rounded-3xl active:scale-90 transition-all hover:bg-slate-100">
                                     <Icons.RotateCcw />
                                 </button>
-                                <button onClick={isActive ? () => handleStop(false) : handleStart} className={`p-8 rounded-[2.5rem] shadow-2xl transition-all active:scale-90 ${isActive ? 'bg-rose-500 text-white shadow-rose-200' : 'bg-indigo-600 text-white shadow-indigo-200'}`}>
+                                <button 
+                                    onClick={isActive ? () => handleStop(false) : handleStart} 
+                                    className={`p-10 rounded-[2.8rem] shadow-2xl transition-all active:scale-95 ${isActive ? 'bg-rose-500 text-white shadow-rose-200' : 'bg-indigo-600 text-white shadow-indigo-300'}`}
+                                >
                                     {isActive ? <Icons.Pause /> : <Icons.Play />}
                                 </button>
-                                <button className="p-5 bg-gray-50 text-gray-300 rounded-3xl opacity-50 cursor-not-allowed">
+                                <div className="p-6 text-slate-200">
                                     <Icons.Volume2 />
-                                </button>
+                                </div>
                             </div>
                         </div>
                     </main>
 
-                    <div className="w-full max-w-md grid grid-cols-3 gap-3 mt-8">
+                    <div className="w-full max-w-md grid grid-cols-3 gap-4 mt-8">
                         {[10, 20, 30].map(m => (
-                            <button key={m} onClick={() => { setTimeLeft(m*60); setTotalSeconds(m*60); setCustomMinutes(m); }} className={`py-4 rounded-2xl font-black text-sm transition-all border-2 ${customMinutes === m && !isActive ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-400 border-gray-100'}`}>
+                            <button 
+                                key={m} 
+                                onClick={() => { setTimeLeft(m*60); setTotalSeconds(m*60); setCustomMinutes(m); }} 
+                                className={`py-4 rounded-2xl font-black text-base transition-all border-2 ${customMinutes === m && !isActive ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100' : 'bg-white text-slate-400 border-slate-100'}`}
+                            >
                                 {m} 分鐘
                             </button>
                         ))}
                     </div>
 
-                    <p className="mt-8 text-[10px] text-gray-400 font-bold uppercase tracking-widest text-center leading-relaxed">
-                        李鳳山師父 · 平甩功導引<br/>每五下蹲彈兩下 · 氣血循環
-                    </p>
+                    <div className="mt-10 px-6 py-4 bg-indigo-50/50 rounded-2xl max-w-md border border-indigo-100">
+                        <p className="text-[10px] text-indigo-700 font-bold leading-relaxed text-center italic">
+                            「平甩功重點：每五下蹲兩下，全身放鬆，嘴角含笑。」
+                        </p>
+                    </div>
 
                     {showSettings && (
-                        <div className="fixed inset-0 bg-gray-900/80 backdrop-blur-md z-50 flex items-end sm:items-center justify-center">
-                            <div className="bg-white rounded-t-[3rem] sm:rounded-[3rem] p-10 w-full max-w-md shadow-2xl">
-                                <h3 className="text-2xl font-black mb-8 text-gray-900">設定修煉分鐘</h3>
+                        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-lg z-50 flex items-end sm:items-center justify-center px-4">
+                            <div className="bg-white rounded-t-[3.5rem] sm:rounded-[3.5rem] p-10 w-full max-w-md shadow-2xl">
+                                <h3 className="text-2xl font-black mb-8 text-slate-900">自訂修煉時間</h3>
                                 <div className="flex items-center justify-center gap-4 mb-10">
-                                    <input type="number" value={customMinutes} onChange={e => setCustomMinutes(Math.max(1, parseInt(e.target.value)||1))} className="w-32 text-6xl font-black text-center text-indigo-600 border-b-4 border-indigo-500 focus:outline-none bg-transparent" />
-                                    <span className="text-xl font-black text-gray-400">MIN</span>
+                                    <input 
+                                        type="number" 
+                                        inputMode="numeric"
+                                        value={customMinutes} 
+                                        onChange={e => setCustomMinutes(Math.max(1, parseInt(e.target.value)||1))} 
+                                        className="w-36 text-7xl font-black text-center text-indigo-600 border-b-4 border-indigo-500 focus:outline-none bg-transparent py-2" 
+                                    />
+                                    <span className="text-2xl font-black text-slate-300">分鐘</span>
                                 </div>
-                                <button onClick={() => { setTimeLeft(customMinutes*60); setTotalSeconds(customMinutes*60); setShowSettings(false); }} className="w-full bg-indigo-600 text-white py-5 rounded-3xl font-black text-xl shadow-xl shadow-indigo-100">套用設定</button>
-                                <button onClick={() => setShowSettings(false)} className="w-full mt-4 text-gray-400 font-bold py-2">取消</button>
+                                <button onClick={() => { setTimeLeft(customMinutes*60); setTotalSeconds(customMinutes*60); setShowSettings(false); }} className="w-full bg-indigo-600 text-white py-6 rounded-[2rem] font-black text-xl shadow-xl shadow-indigo-200">設定並返回</button>
+                                <button onClick={() => setShowSettings(false)} className="w-full mt-4 text-slate-400 font-bold py-2">取消</button>
                             </div>
                         </div>
                     )}
 
                     {isFinished && (
-                        <div className="fixed inset-0 bg-indigo-900/95 z-[60] flex items-center justify-center p-8 text-center text-white backdrop-blur-lg">
-                            <div className="animate-in zoom-in duration-500">
-                                <div className="w-24 h-24 bg-white/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <div className="fixed inset-0 bg-indigo-950/95 z-[60] flex items-center justify-center p-8 text-center text-white backdrop-blur-2xl">
+                            <div className="max-w-xs">
+                                <div className="w-28 h-28 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-8 border border-white/20">
                                     <Icons.Check />
                                 </div>
-                                <h2 className="text-5xl font-black mb-4">功德圓滿</h2>
-                                <p className="text-lg opacity-80 mb-10 leading-relaxed">雙手緩緩停下，閉目靜站三分鐘。<br/>感受氣血回流，全身舒暢。</p>
-                                <button onClick={() => setIsFinished(false)} className="bg-white text-indigo-900 px-12 py-5 rounded-3xl font-black text-xl shadow-2xl active:scale-95 transition-transform">收功</button>
+                                <h2 className="text-5xl font-black mb-6 tracking-tight">功德圓滿</h2>
+                                <p className="text-lg text-indigo-100/80 mb-12 leading-relaxed font-medium">
+                                    雙手緩緩停下，閉目靜站三分鐘。<br/>
+                                    感受氣血流遍全身，恢復平靜。
+                                </p>
+                                <button onClick={() => setIsFinished(false)} className="w-full bg-white text-indigo-900 px-12 py-6 rounded-[2rem] font-black text-2xl shadow-2xl active:scale-95 transition-transform">
+                                    圓滿收功
+                                </button>
                             </div>
                         </div>
                     )}
